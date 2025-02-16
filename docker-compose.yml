@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  go-web-app:
+    build: ./go-web-app
+    container_name: go-web-app
+    ports:
+      - "8080:8080"
+    networks:
+      elk_network:
+        ipv4_address: 172.20.0.10 # 固定 IP 地址
+    depends_on:
+      - elk
+
+  elk:
+    image: sebp/elk:8.15.1
+    container_name: elk
+    ports:
+      - "5601:5601" # Kibana
+      - "9200:9200" # Elasticsearch
+      - "5044:5044" # Logstash
+    volumes:
+      - ./logstash.conf:/etc/logstash/conf.d/logstash.conf
+    networks:
+      elk_network:
+        ipv4_address: 172.20.0.20 # 固定 IP 地址
+
+networks:
+  elk_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24 # 自定义子网
