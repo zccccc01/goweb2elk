@@ -1,4 +1,4 @@
-# goweb2elk
+# logviz-go-elk
 
 Use docker to run goweb and elk(elasticsearch, logstash, kibana)
 
