@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -11,18 +12,40 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-func sendToLogstash(message string) {
-	conn, err := net.Dial("tcp", "172.20.0.20:5044") // 连接到 Logstash
+// LogEntry 定义日志结构
+type LogEntry struct {
+	Method    string        `json:"method"`
+	Path      string        `json:"path"`
+	IP        string        `json:"ip"`
+	UserAgent string        `json:"user_agent"`
+	Latency   time.Duration `json:"latency"`
+	Message   string        `json:"message,omitempty"` // 用于错误日志
+}
+
+func sendToLogstash(entry LogEntry) {
+	// 将结构体转换为 JSON
+	jsonData, err := json.Marshal(entry)
+	if err != nil {
+		log.Printf("Failed to marshal log entry to JSON: %v", err)
+		return
+	}
+
+	// 连接到 Logstash
+	conn, err := net.Dial("tcp", "172.20.0.20:5044")
 	if err != nil {
 		log.Printf("Failed to connect to Logstash: %v", err)
 		return
 	}
 	defer conn.Close()
-	log.Printf("Sending log to Logstash: %s", message)
-	_, err = conn.Write([]byte(message + "\n")) // 发送日志
+
+	// 发送 JSON 日志
+	_, err = conn.Write(jsonData)
 	if err != nil {
 		log.Printf("Failed to send log to Logstash: %v", err)
+		return
 	}
+
+	log.Printf("Sending log to Logstash: %s", jsonData)
 }
 
 func main() {
@@ -43,12 +66,23 @@ func main() {
 		start := time.Now()
 		c.Next()
 		latency := time.Since(start)
-		logMessage := formatLog(c, latency)
-		log.Println(logMessage)
-		sendToLogstash(logMessage) // 发送日志到 Logstash
+
+		// 构造日志结构体
+		logEntry := LogEntry{
+			Method:    c.Request.Method,
+			Path:      c.Request.URL.Path,
+			IP:        c.ClientIP(),
+			UserAgent: c.Request.UserAgent(),
+			Latency:   latency,
+		}
+
+		// 打印日志到控制台和文件
+		log.Println(formatLog(logEntry))
+
+		// 发送日志到 Logstash
+		sendToLogstash(logEntry)
 	})
 
-	// 示例路由
 	r.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "Hello, ELK!",
@@ -56,9 +90,17 @@ func main() {
 	})
 
 	r.GET("/error", func(c *gin.Context) {
-		logMessage := "Error: Something went wrong!"
-		log.Println(logMessage)
-		sendToLogstash(logMessage) // 发送日志到 Logstash
+		// 构造错误日志结构体
+		logEntry := LogEntry{
+			Message: "Error: Something went wrong!",
+		}
+
+		// 打印错误日志到控制台和文件
+		log.Println(logEntry.Message)
+
+		// 发送错误日志到 Logstash
+		sendToLogstash(logEntry)
+
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Internal Server Error",
 		})
@@ -70,12 +112,13 @@ func main() {
 	}
 }
 
-func formatLog(c *gin.Context, latency time.Duration) string {
+// formatLog 将日志结构体格式化为字符串
+func formatLog(entry LogEntry) string {
 	return fmt.Sprintf("[%s] %s %s %s %v",
-		c.Request.Method,
-		c.Request.URL.Path,
-		c.ClientIP(),
-		c.Request.UserAgent(),
-		latency,
+		entry.Method,
+		entry.Path,
+		entry.IP,
+		entry.UserAgent,
+		entry.Latency,
 	)
 }
