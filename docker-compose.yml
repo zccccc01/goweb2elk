@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   go-web-app:
     build: ./go-web-app
